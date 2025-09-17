@@ -121,7 +121,7 @@ int main() {
   manager.addNew(300, true);
   manager.addNew(1000, true);
 
-  while (systick_ms() < 30 * 1000) {
+  while (systick_ms() < 33 * 1000) {
     if (events.empty() == false) {
       auto timerId = events.front();
       events.pop();
