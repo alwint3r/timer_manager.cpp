@@ -3,13 +3,42 @@
 #include <cstdint>
 #include <functional>
 #include <utility>
+#ifdef TIMER_ENABLE_STD_MUTEX
+#include <mutex>
+#endif
 
 namespace timer {
+
 using TimerID = int32_t;
 
-template <size_t Capacity, size_t TicksFrequency = 1000> class TimerManager {
+struct NoLockPolicy {
+  struct Guard {
+    Guard() noexcept {}
+    ~Guard() = default;
+  };
+};
+
+#ifdef TIMER_ENABLE_STD_MUTEX
+struct StdMutexPolicy {
+  struct Guard {
+    Guard() { mutex().lock(); }
+    ~Guard() { mutex().unlock(); }
+
+  private:
+    static std::mutex &mutex() {
+      static std::mutex m;
+      return m;
+    }
+  };
+};
+#endif
+
+template <size_t Capacity, size_t TicksFrequency = 1000,
+          typename SyncPolicy = NoLockPolicy,
+          typename CallbackT = std::function<void(TimerID)>>
+class TimerManager {
 public:
-  using TimeoutCallback = std::function<void(TimerID id)>;
+  using TimeoutCallback = CallbackT;
 
   struct State {
     uint64_t ticksLeft[Capacity]{};
@@ -20,6 +49,7 @@ public:
   };
 
   TimerID addNew(const uint32_t timeoutMs, const bool autoReload) {
+    typename SyncPolicy::Guard guard{};
     auto id = getFreeTimerID();
     if (id < 0) {
       return -1;
@@ -36,6 +66,7 @@ public:
   }
 
   bool cancelTimer(const TimerID id) {
+    typename SyncPolicy::Guard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -48,6 +79,7 @@ public:
   }
 
   bool removeTimer(const TimerID id) {
+    typename SyncPolicy::Guard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -62,6 +94,7 @@ public:
   }
 
   bool changeTimeout(const TimerID id, uint32_t newTimeoutMs) {
+    typename SyncPolicy::Guard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -73,6 +106,7 @@ public:
   }
 
   bool resume(const TimerID id) {
+    typename SyncPolicy::Guard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -83,30 +117,44 @@ public:
   }
 
   void processTick() {
-    for (size_t ix = 0; ix < Capacity; ix++) {
-      if (!state_.allocated[ix] || !state_.active[ix]) {
-        continue;
-      }
+    TimerID expired[Capacity];
+    size_t expiredCount = 0;
+    TimeoutCallback cbCopy{};
 
-      if (state_.ticksLeft[ix] > 0) {
-        state_.ticksLeft[ix] -= 1;
-      }
+    {
+      typename SyncPolicy::Guard guard{};
+      cbCopy = timeoutCb_;
 
-      if (state_.ticksLeft[ix] == 0) {
-        if (timeoutCb_) {
-          std::invoke(timeoutCb_, static_cast<TimerID>(ix));
+      for (size_t ix = 0; ix < Capacity; ix++) {
+        if (!state_.allocated[ix] || !state_.active[ix]) {
+          continue;
         }
 
-        if (state_.autoReload[ix]) {
-          state_.ticksLeft[ix] = computeTicks(state_.timeout[ix]);
-        } else {
-          state_.active[ix] = false; // one-shot stops but stays allocated
+        if (state_.ticksLeft[ix] > 0) {
+          state_.ticksLeft[ix] -= 1;
         }
+
+        if (state_.ticksLeft[ix] == 0) {
+          expired[expiredCount++] = static_cast<TimerID>(ix);
+
+          if (state_.autoReload[ix]) {
+            state_.ticksLeft[ix] = computeTicks(state_.timeout[ix]);
+          } else {
+            state_.active[ix] = false;
+          }
+        }
+      }
+    }
+
+    if (cbCopy) {
+      for (size_t i = 0; i < expiredCount; ++i) {
+        std::invoke(cbCopy, expired[i]);
       }
     }
   }
 
   void onTimeoutEvent(TimeoutCallback callback) {
+    typename SyncPolicy::Guard guard{};
     timeoutCb_ = std::move(callback);
   }
 
@@ -118,12 +166,13 @@ private:
         return id;
       }
     }
-
     return -1;
   }
 
-  uint64_t computeTicks(uint32_t timeoutMs) {
-    return (TicksFrequency * timeoutMs) / 1000;
+  static constexpr uint64_t computeTicks(uint32_t timeoutMs) {
+    return (static_cast<uint64_t>(TicksFrequency) *
+            static_cast<uint64_t>(timeoutMs)) /
+           1000u;
   }
 
   bool isTimerFree(const size_t idx) const { return !state_.allocated[idx]; }
@@ -141,4 +190,5 @@ private:
   State state_{};
   TimeoutCallback timeoutCb_{nullptr};
 };
+
 } // namespace timer
