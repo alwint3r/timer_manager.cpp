@@ -93,12 +93,12 @@ public:
       }
 
       if (state_.ticksLeft[ix] == 0) {
-          if (timeoutCb_) {
-            std::invoke(timeoutCb_, static_cast<TimerID>(ix));
-          }
+        if (timeoutCb_) {
+          std::invoke(timeoutCb_, static_cast<TimerID>(ix));
+        }
 
-          if (state_.autoReload[ix]) {
-            state_.ticksLeft[ix] = computeTicks(state_.timeout[ix]);
+        if (state_.autoReload[ix]) {
+          state_.ticksLeft[ix] = computeTicks(state_.timeout[ix]);
         } else {
           state_.active[ix] = false; // one-shot stops but stays allocated
         }
@@ -129,9 +129,11 @@ private:
   bool isTimerFree(const size_t idx) const { return !state_.allocated[idx]; }
 
   bool isValidAllocated(TimerID id) const {
-    if (id < 0) return false;
+    if (id < 0)
+      return false;
     size_t ix = static_cast<size_t>(id);
-    if (ix >= Capacity) return false;
+    if (ix >= Capacity)
+      return false;
     return state_.allocated[ix];
   }
 
