@@ -1,12 +1,12 @@
-require('lspconfig').clangd.setup {
-	cmd = {
+vim.lsp.config('clangd', {
+cmd = {
 		"clangd",
 		"--compile-commands-dir=build",
 		"--background-index",
 		"--function-arg-placeholders=false",
 	},
 	filetypes = { "c", "cpp" },
-	root_dir = require('lspconfig').util.root_pattern("CMakeLists.txt"),
+	root_markers = { "CMakeLists.txt", ".git" },
 	on_attach = function(client, bufnr)
 		if client.server_capabilities.documentFormattingProvider then
 			local grp = vim.api.nvim_create_augroup("LspFormat." .. bufnr, { clear = true })
@@ -32,7 +32,7 @@ require('lspconfig').clangd.setup {
 	end,
 
 	capabilities = require('cmp_nvim_lsp').default_capabilities(),
-}
+})
 
 vim.keymap.set('n', '<leader>b', '<cmd>TermExec cmd="./build.sh"<cr>', { desc = 'Build project' })
 vim.keymap.set('n', '<leader>r', '<cmd>TermExec cmd="./run.sh"<cr>', { desc = 'Run project' })
