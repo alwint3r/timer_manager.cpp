@@ -3,39 +3,32 @@
 #include <cstdint>
 #include <functional>
 #include <utility>
-#ifdef TIMER_ENABLE_STD_MUTEX
-#include <mutex>
-#endif
 
 namespace timer {
 
 using TimerID = int32_t;
 
+template <typename P>
+concept TimerSyncPolicy = requires {
+  typename P::GeneralGuard;
+  typename P::CriticalGuard;
+};
+
 struct NoLockPolicy {
-  struct Guard {
-    Guard() noexcept {}
-    ~Guard() = default;
+  struct GeneralGuard {
+    GeneralGuard() noexcept {}
+    ~GeneralGuard() = default;
+  };
+  struct CriticalGuard {
+    CriticalGuard() noexcept {}
+    ~CriticalGuard() = default;
   };
 };
-
-#ifdef TIMER_ENABLE_STD_MUTEX
-struct StdMutexPolicy {
-  struct Guard {
-    Guard() { mutex().lock(); }
-    ~Guard() { mutex().unlock(); }
-
-  private:
-    static std::mutex &mutex() {
-      static std::mutex m;
-      return m;
-    }
-  };
-};
-#endif
 
 template <size_t Capacity, size_t TicksFrequency = 1000,
           typename SyncPolicy = NoLockPolicy,
           typename CallbackT = std::function<void(TimerID)>>
+  requires TimerSyncPolicy<SyncPolicy>
 class TimerManager {
 public:
   using TimeoutCallback = CallbackT;
@@ -49,7 +42,7 @@ public:
   };
 
   TimerID addNew(const uint32_t timeoutMs, const bool autoReload) {
-    typename SyncPolicy::Guard guard{};
+    typename SyncPolicy::GeneralGuard guard{};
     auto id = getFreeTimerID();
     if (id < 0) {
       return -1;
@@ -66,7 +59,7 @@ public:
   }
 
   bool cancelTimer(const TimerID id) {
-    typename SyncPolicy::Guard guard{};
+    typename SyncPolicy::GeneralGuard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -79,7 +72,7 @@ public:
   }
 
   bool removeTimer(const TimerID id) {
-    typename SyncPolicy::Guard guard{};
+    typename SyncPolicy::GeneralGuard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -94,7 +87,7 @@ public:
   }
 
   bool changeTimeout(const TimerID id, uint32_t newTimeoutMs) {
-    typename SyncPolicy::Guard guard{};
+    typename SyncPolicy::GeneralGuard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -106,7 +99,7 @@ public:
   }
 
   bool resume(const TimerID id) {
-    typename SyncPolicy::Guard guard{};
+    typename SyncPolicy::GeneralGuard guard{};
     if (!isValidAllocated(id)) {
       return false;
     }
@@ -116,13 +109,14 @@ public:
     return true;
   }
 
+  // Call from interrupt context
   void processTick() {
     TimerID expired[Capacity];
     size_t expiredCount = 0;
     TimeoutCallback cbCopy{};
 
     {
-      typename SyncPolicy::Guard guard{};
+      typename SyncPolicy::CriticalGuard guard{};
       cbCopy = timeoutCb_;
 
       for (size_t ix = 0; ix < Capacity; ix++) {
@@ -154,7 +148,7 @@ public:
   }
 
   void onTimeoutEvent(TimeoutCallback callback) {
-    typename SyncPolicy::Guard guard{};
+    typename SyncPolicy::GeneralGuard guard{};
     timeoutCb_ = std::move(callback);
   }
 
