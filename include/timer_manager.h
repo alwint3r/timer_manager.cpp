@@ -58,6 +58,26 @@ public:
     return id;
   }
 
+  uint32_t getTimeout(const TimerID id) const {
+    typename SyncPolicy::GeneralGuard guard{};
+    if (!isValidAllocated(id)) {
+      return 0;
+    }
+
+    size_t ix = static_cast<size_t>(id);
+    return state_.timeout[ix];
+  }
+
+  uint64_t getTicksLeft(const TimerID id) const {
+    typename SyncPolicy::GeneralGuard guard{};
+    if (!isValidAllocated(id)) {
+      return 0;
+    }
+
+    size_t ix = static_cast<size_t>(id);
+    return state_.ticksLeft[ix];
+  }
+
   bool cancelTimer(const TimerID id) {
     typename SyncPolicy::GeneralGuard guard{};
     if (!isValidAllocated(id)) {
