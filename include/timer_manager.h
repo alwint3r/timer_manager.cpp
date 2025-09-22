@@ -120,13 +120,17 @@ public:
 
   bool resume(const TimerID id) {
     typename SyncPolicy::GeneralGuard guard{};
-    if (!isValidAllocated(id)) {
-      return false;
-    }
-    size_t ix = static_cast<size_t>(id);
-    state_.ticksLeft[ix] = computeTicks(state_.timeout[ix]);
-    state_.active[ix] = true;
-    return true;
+    return restartLocked(id);
+  }
+
+  bool restart(const TimerID id) {
+    typename SyncPolicy::GeneralGuard guard{};
+    return restartLocked(id);
+  }
+
+  bool restartFromISR(const TimerID id) {
+    typename SyncPolicy::CriticalGuard guard{};
+    return restartLocked(id);
   }
 
   // Call from interrupt context
@@ -200,7 +204,16 @@ private:
     return state_.allocated[ix];
   }
 
-private:
+  bool restartLocked(const TimerID id) {
+    if (!isValidAllocated(id)) {
+      return false;
+    }
+    size_t ix = static_cast<size_t>(id);
+    state_.ticksLeft[ix] = computeTicks(state_.timeout[ix]);
+    state_.active[ix] = true;
+    return true;
+  }
+
   State state_{};
   TimeoutCallback timeoutCb_{nullptr};
 };
